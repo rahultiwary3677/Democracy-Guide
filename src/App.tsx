@@ -2,7 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import ReactMarkdown from 'react-markdown';
-import { Send, User, Info, Moon, Sun } from 'lucide-react';
+import { Send, User, Info, Moon, Sun, Copy, Trash2, CheckCircle2 } from 'lucide-react';
+import { logEvent } from 'firebase/analytics';
+import { analytics } from './firebase';
 import './App.css';
 
 interface Message {
@@ -38,7 +40,8 @@ function App() {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(true); // Default to dark for cool look
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const isConfigured = !!API_KEY;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -47,6 +50,13 @@ function App() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  // Log page view
+  useEffect(() => {
+    if (analytics) {
+      logEvent(analytics, 'page_view', { page_title: 'Democracy Guide' });
+    }
+  }, []);
 
   // Dark mode toggle
   useEffect(() => {
@@ -70,8 +80,9 @@ function App() {
     const text = typeof textToSend === 'string' ? textToSend : input;
     if (!text.trim() || !isConfigured) return;
 
+    const newId = crypto.randomUUID();
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: newId,
       text: text,
       sender: 'user',
       timestamp: new Date()
@@ -82,8 +93,12 @@ function App() {
     setIsLoading(true);
 
     try {
+      if (analytics) {
+        logEvent(analytics, 'message_sent', { sender: 'user', text_length: text.length });
+      }
+
       const model = genAI.getGenerativeModel({ 
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         systemInstruction: SYSTEM_PROMPT
       });
 
@@ -105,17 +120,21 @@ function App() {
       const responseText = result.response.text();
 
       const botMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: crypto.randomUUID(),
         text: responseText,
         sender: 'bot',
         timestamp: new Date()
       };
 
       setMessages(prev => [...prev, botMessage]);
+      
+      if (analytics) {
+        logEvent(analytics, 'message_received', { sender: 'bot', text_length: responseText.length });
+      }
     } catch (error) {
       console.error("Error generating response:", error);
       const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: crypto.randomUUID(),
         text: "I encountered an error trying to process that. Please try again later.",
         sender: 'bot',
         timestamp: new Date()
@@ -133,19 +152,51 @@ function App() {
     }
   };
 
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+      if (analytics) logEvent(analytics, 'copy_message', { message_id: id });
+    });
+  };
+
+  const clearChat = () => {
+    if (window.confirm("Are you sure you want to clear the conversation?")) {
+      setMessages([
+        {
+          id: 'welcome-msg',
+          text: "Hello! I'm **Democracy Guide**. How can I help you understand the election process today?",
+          sender: 'bot',
+          timestamp: new Date()
+        }
+      ]);
+      if (analytics) logEvent(analytics, 'clear_chat');
+    }
+  };
+
   return (
     <div className="app-container">
       <header className="app-header">
         <div className="header-left">
           <h1>Democracy Guide</h1>
         </div>
-        <button 
-          className="theme-toggle" 
-          onClick={() => setIsDarkMode(!isDarkMode)}
-          aria-label="Toggle dark mode"
-        >
-          {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-        </button>
+        <div className="header-right">
+          <button 
+            className="header-btn" 
+            onClick={clearChat}
+            aria-label="Clear chat"
+            title="Clear chat"
+          >
+            <Trash2 size={20} />
+          </button>
+          <button 
+            className="theme-toggle" 
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            aria-label="Toggle dark mode"
+          >
+            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
+        </div>
       </header>
 
       <main className="chat-container" role="main">
@@ -182,6 +233,16 @@ function App() {
                     </div>
                   ) : (
                     <p>{message.text}</p>
+                  )}
+                  
+                  {message.sender === 'bot' && message.id !== 'welcome-msg' && (
+                    <button 
+                      className="copy-btn" 
+                      onClick={() => copyToClipboard(message.text, message.id)}
+                      aria-label="Copy message"
+                    >
+                      {copiedId === message.id ? <CheckCircle2 size={16} color="#4ade80" /> : <Copy size={16} />}
+                    </button>
                   )}
                 </div>
 
