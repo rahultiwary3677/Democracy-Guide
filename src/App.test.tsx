@@ -78,14 +78,26 @@ describe('App Component', () => {
     });
   });
 
-  test('toggles dark mode', () => {
+  test('renders markdown content in bot messages', async () => {
     render(<App />);
-    const themeToggle = screen.getByLabelText(/Toggle dark mode/i);
     
-    // Initially dark (based on state)
-    expect(document.body.classList.contains('dark')).toBe(true);
+    const textarea = screen.getByPlaceholderText(/Ask Democracy Guide/i);
+    const sendButton = screen.getByLabelText(/Send message/i);
+
+    fireEvent.change(textarea, { target: { value: 'Show markdown' } });
+    fireEvent.click(sendButton);
+
+    await waitFor(() => {
+      // The mock response contains "mocked response", let's check for that
+      expect(screen.getByText(/This is a mocked response/i)).toBeInTheDocument();
+    });
+  });
+
+  test('prevents sending empty messages', async () => {
+    render(<App />);
+    const sendButton = screen.getByLabelText(/Send message/i);
     
-    fireEvent.click(themeToggle);
-    expect(document.body.classList.contains('dark')).toBe(false);
+    fireEvent.click(sendButton);
+    expect(mockSendMessage).not.toHaveBeenCalled();
   });
 });

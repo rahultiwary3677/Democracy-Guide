@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import ReactMarkdown from 'react-markdown';
@@ -28,6 +28,50 @@ const SUGGESTED_PROMPTS = [
   "What ID do I need to vote?",
   "When is the next election?"
 ];
+
+// Memoized Message Component for Efficiency
+const MessageItem = memo(({ message, copiedId, copyToClipboard }: { message: Message; copiedId: string | null; copyToClipboard: (text: string, id: string) => void }) => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className={`message-wrapper ${message.sender}`}
+    >
+      {message.sender === 'bot' && (
+        <div className="message-avatar">
+          <img src="/avatar.png" alt="Bot Avatar" />
+        </div>
+      )}
+      
+      <div className="message-bubble">
+        {message.sender === 'bot' ? (
+          <div className="markdown-content">
+            <ReactMarkdown>{message.text}</ReactMarkdown>
+          </div>
+        ) : (
+          <p>{message.text}</p>
+        )}
+        
+        {message.sender === 'bot' && message.id !== 'welcome-msg' && (
+          <button 
+            className="copy-btn" 
+            onClick={() => copyToClipboard(message.text, message.id)}
+            aria-label="Copy message"
+          >
+            {copiedId === message.id ? <CheckCircle2 size={16} color="#4ade80" /> : <Copy size={16} />}
+          </button>
+        )}
+      </div>
+
+      {message.sender === 'user' && (
+        <div className="message-avatar" style={{ background: 'var(--primary)' }}>
+          <User size={20} color="white" />
+        </div>
+      )}
+    </motion.div>
+  );
+});
 
 function App() {
   const [messages, setMessages] = useState<Message[]>([
@@ -76,27 +120,30 @@ function App() {
     }
   }, [input]);
 
-  const handleSendMessage = async (textToSend?: string) => {
+  // Optimized Event Handlers
+  const handleSendMessage = useCallback(async (textToSend?: string) => {
     const text = typeof textToSend === 'string' ? textToSend : input;
     if (!text.trim() || !isConfigured) return;
 
-    const newId = crypto.randomUUID();
     const userMessage: Message = {
-      id: newId,
+      id: crypto.randomUUID(),
       text: text,
       sender: 'user',
       timestamp: new Date()
     };
+
+    if (analytics) {
+      logEvent(analytics, 'chat_message_sent', { 
+        length: text.length,
+        is_suggested: typeof textToSend === 'string'
+      });
+    }
 
     setMessages(prev => [...prev, userMessage]);
     if (text === input) setInput('');
     setIsLoading(true);
 
     try {
-      if (analytics) {
-        logEvent(analytics, 'message_sent', { sender: 'user', text_length: text.length });
-      }
-
       const model = genAI.getGenerativeModel({ 
         model: 'gemini-1.5-flash',
         systemInstruction: SYSTEM_PROMPT
@@ -126,11 +173,11 @@ function App() {
         timestamp: new Date()
       };
 
-      setMessages(prev => [...prev, botMessage]);
-      
       if (analytics) {
-        logEvent(analytics, 'message_received', { sender: 'bot', text_length: responseText.length });
+        logEvent(analytics, 'chat_message_received', { length: responseText.length });
       }
+
+      setMessages(prev => [...prev, botMessage]);
     } catch (error) {
       console.error("Error generating response:", error);
       const errorMessage: Message = {
@@ -143,7 +190,7 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [input, isConfigured, messages]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -152,15 +199,15 @@ function App() {
     }
   };
 
-  const copyToClipboard = (text: string, id: string) => {
+  const copyToClipboard = useCallback((text: string, id: string) => {
     navigator.clipboard.writeText(text).then(() => {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
-      if (analytics) logEvent(analytics, 'copy_message', { message_id: id });
+      if (analytics) logEvent(analytics, 'message_copied', { message_id: id });
     });
-  };
+  }, []);
 
-  const clearChat = () => {
+  const clearChat = useCallback(() => {
     if (window.confirm("Are you sure you want to clear the conversation?")) {
       setMessages([
         {
@@ -170,9 +217,14 @@ function App() {
           timestamp: new Date()
         }
       ]);
-      if (analytics) logEvent(analytics, 'clear_chat');
+      if (analytics) logEvent(analytics, 'chat_cleared');
     }
-  };
+  }, []);
+
+  const handleToggleDarkMode = useCallback(() => {
+    setIsDarkMode(prev => !prev);
+    if (analytics) logEvent(analytics, 'theme_toggled', { dark_mode: !isDarkMode });
+  }, [isDarkMode]);
 
   return (
     <div className="app-container">
@@ -191,7 +243,7 @@ function App() {
           </button>
           <button 
             className="theme-toggle" 
-            onClick={() => setIsDarkMode(!isDarkMode)}
+            onClick={handleToggleDarkMode}
             aria-label="Toggle dark mode"
           >
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
@@ -213,45 +265,12 @@ function App() {
         <div className="messages-area" aria-live="polite">
           <AnimatePresence initial={false}>
             {messages.map((message) => (
-              <motion.div
-                key={message.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-                className={`message-wrapper ${message.sender}`}
-              >
-                {message.sender === 'bot' && (
-                  <div className="message-avatar">
-                    <img src="/avatar.png" alt="Bot Avatar" />
-                  </div>
-                )}
-                
-                <div className="message-bubble">
-                  {message.sender === 'bot' ? (
-                    <div className="markdown-content">
-                      <ReactMarkdown>{message.text}</ReactMarkdown>
-                    </div>
-                  ) : (
-                    <p>{message.text}</p>
-                  )}
-                  
-                  {message.sender === 'bot' && message.id !== 'welcome-msg' && (
-                    <button 
-                      className="copy-btn" 
-                      onClick={() => copyToClipboard(message.text, message.id)}
-                      aria-label="Copy message"
-                    >
-                      {copiedId === message.id ? <CheckCircle2 size={16} color="#4ade80" /> : <Copy size={16} />}
-                    </button>
-                  )}
-                </div>
-
-                {message.sender === 'user' && (
-                  <div className="message-avatar" style={{ background: 'var(--primary)' }}>
-                    <User size={20} color="white" />
-                  </div>
-                )}
-              </motion.div>
+              <MessageItem 
+                key={message.id} 
+                message={message} 
+                copiedId={copiedId} 
+                copyToClipboard={copyToClipboard} 
+              />
             ))}
           </AnimatePresence>
           
