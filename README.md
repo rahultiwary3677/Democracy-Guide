@@ -12,6 +12,13 @@
 **Election Information and Voter Guidance**
 Democracy Guide focuses on providing neutral, accurate, and accessible information to help voters navigate registration, understand timelines, and participate effectively in the democratic process.
 
+## Google Services Integration
+- **Gemini AI**: Integrated via the `@google/generative-ai` package using **Gemini 1.5 Flash** to drive the assistant logic, demonstrating meaningful AI integration into a client application.
+- **Firebase Analytics**: Integrated to track performance metrics and user interactions securely.
+- **Firebase Performance Monitoring**: Implemented to ensure optimal load times and monitor API response latency, demonstrating advanced service adoption.
+- **Google Cloud Run**: Utilized for secure, containerized, and scalable global hosting.
+- **Google Fonts**: Integrated **Inter** and **JetBrains Mono** via Google's font CDN for premium typography.
+
 ## 🏗️ Architecture & Logic
 The application is built with a focus on performance, security, and a premium user experience.
 

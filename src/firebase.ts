@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAnalytics, isSupported } from "firebase/analytics";
+import { getPerformance } from "firebase/performance";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -19,6 +20,7 @@ import type { Analytics } from "firebase/analytics";
 
 let app: FirebaseApp | undefined;
 let analytics: Analytics | undefined;
+let perf: ReturnType<typeof getPerformance> | undefined;
 
 if (isConfigured) {
   try {
@@ -27,7 +29,8 @@ if (isConfigured) {
     isSupported().then((supported) => {
       if (supported && app) {
         analytics = getAnalytics(app);
-        console.log("🔥 Firebase & Analytics initialized successfully!");
+        perf = getPerformance(app);
+        console.log("🔥 Firebase Analytics & Performance initialized!");
       }
     });
   } catch (error) {
@@ -35,4 +38,4 @@ if (isConfigured) {
   }
 }
 
-export { app, analytics, isConfigured as isFirebaseConfigured };
+export { app, analytics, perf, isConfigured as isFirebaseConfigured };
